@@ -1,0 +1,14 @@
+lm-mxl-ndi — MXL ⇄ NDI® bridge (Livemotion, internal).
+
+NDI® is a registered trademark of Vizrt NDI AB. https://ndi.video/
+
+This image contains the NDI® runtime (libndi.so.6, /opt/lm-mxl-ndi/lib) and
+compiled NDI SDK sample programs (/opt/lm-mxl-ndi/bin/NDIlib_*), unmodified,
+under the NDI SDK License Agreement (NDI-SDK-License-Agreement.txt here;
+https://ndi.link/ndisdk_license). Copyright (C) 2023-2026 Vizrt NDI AB. All
+rights reserved. Third-party notices of the runtime: libndi_licenses.txt.
+The NDI SDK itself and the NDI tools are not included. Modifying, reverse
+engineering or recompiling the NDI runtime is not permitted.
+
+lm-mxl-ndi is not a product of Vizrt NDI AB and is not endorsed by it.
+NDI tools: https://ndi.video/tools/

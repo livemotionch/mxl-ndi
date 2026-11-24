@@ -1,0 +1,69 @@
+# lm-mxl-ndi next to mxl-stack's compose/single-host example: an override
+# file (Compose anchors don't cross files, so the NMOS settings are spelled
+# out). From compose/single-host of mxl-stack:
+#
+#   NDI_SDK_ACCEPT_LICENSE=yes docker compose -f compose.yaml -f /path/to/lm-mxl-ndi/deploy/compose.single-host.yaml up -d ndi-bridge
+#
+# NDI_SDK_ACCEPT_LICENSE=yes: the image build downloads the NDI SDK; set it
+# once you have read and accepted the NDI SDK License Agreement.
+#
+# Port plan (host network, one port space with the stack):
+#   web/API/metrics 8210, NMOS 3335. NDI: TCP 5960 (source queries), 5961+
+#   (one per stream), UDP 5960+ (reliable UDP, one per process). mDNS: UDP
+#   5353 (avahi-daemon inside the container, NDI_AVAHI=internal; with a host
+#   avahi-daemon use NDI_AVAHI=host and mount /run/dbus instead). Without
+#   mDNS: NDI_DISCOVERY_SERVER and/or NDI_EXTRA_IPS.
+# The image is built from this repository (docker/Dockerfile), not pulled.
+# NDI® is a registered trademark of Vizrt NDI AB (https://ndi.video/).
+
+services:
+  ndi-bridge:
+    image: ${LM_MXL_NDI_IMAGE:-lm-mxl-ndi:dev}
+    build:
+      context: ${LM_MXL_NDI_SRC:-../../../lm-mxl-ndi}
+      dockerfile: docker/Dockerfile
+      args:
+        NDI_SDK_ACCEPT_LICENSE: ${NDI_SDK_ACCEPT_LICENSE:-no}
+    network_mode: host
+    # The entrypoint starts dbus + avahi-daemon as root, then runs the bridge
+    # as RUN_AS (the MXL tmpfs owner).
+    user: "0:0"
+    init: true
+    depends_on: [registry]
+    environment:
+      RUN_AS: "1000:1000"
+      NDI_AVAHI: internal
+      NMOS_REGISTRY_ADDRESS: ${NMOS_REGISTRY_ADDRESS:-127.0.0.1}
+      NMOS_REGISTRY_PORT: ${NMOS_REGISTRY_PORT:-3210}
+      NMOS_QUERY_ADDRESS: ${NMOS_REGISTRY_ADDRESS:-127.0.0.1}
+      NMOS_QUERY_PORT: ${NMOS_QUERY_PORT:-3211}
+      NMOS_DNS_SD: "false"
+      NMOS_HOST_ADDRESS: ${HOST_IP:?set HOST_IP in .env}
+      NMOS_SEED: ${STACK_ID:-stack}-ndi-bridge
+      NMOS_LABEL: NDI bridge
+      NMOS_PORT: "3335"
+      WEB_PORT: "8210"
+      MXL_DOMAIN_SCAN_PATH: /Volumes/mxl
+      MXL_OUTPUT_DOMAIN_DIR: /Volumes/mxl/ndi-bridge
+      MXL_CLEANUP_ON_EXIT: "true"
+      SHUTDOWN_TIMEOUT_S: "10"
+      VIDEO_FORMAT: ${VIDEO_FORMAT:-1080p50}
+      NDI_LABEL_PREFIX: NDI
+      NDI_INPUTS: "4"
+      NDI_OUTPUTS: "4"
+      # NDI_IN1_SOURCE: "OTHERHOST (Camera 1)"   # or ndi://ip:port; also set in the web UI
+      # NDI_OUT1_NAME: "MXL PGM"
+      # NDI_DISCOVERY_SERVER: "10.0.0.2"         # NDI discovery server(s), host[:port], comma separated
+      # NDI_EXTRA_IPS: "10.0.0.7,10.0.0.8"       # hosts to query for sources without mDNS
+      NDI_IN_SYNC: tai
+      NDI_OUT_PIXEL: uyvy
+      NDI_STATE_DIR: /config
+    volumes:
+      - type: bind
+        source: ${MXL_ROOT:-/Volumes/mxl}
+        target: /Volumes/mxl
+      - ndi-bridge-config:/config
+    restart: unless-stopped
+
+volumes:
+  ndi-bridge-config:

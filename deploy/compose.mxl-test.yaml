@@ -1,0 +1,47 @@
+# lm-mxl-ndi on the mxl-test VM, next to mxl-stack (for lm-infra's
+# mxl-test/compose.lm-ndi.yaml). Image built on the VM from ~/lm-mxl-ndi
+# (docker/Dockerfile, NDI_SDK_ACCEPT_LICENSE=yes). Web 8210 (Caddy 18210),
+# NMOS 3335. NDI: TCP 5960 (source queries) and 5961+ (one per stream),
+# UDP 5960+ (reliable UDP); clear of OMT's 6400–6431.
+# NDI® is a registered trademark of Vizrt NDI AB (https://ndi.video/).
+services:
+  ndi-bridge:
+    image: lm-mxl-ndi:dev
+    network_mode: host
+    # The entrypoint starts dbus + avahi-daemon (NDI discovery) as root and
+    # runs the bridge as 1000:1000, the owner of the MXL tmpfs.
+    user: "0:0"
+    init: true
+    depends_on: [registry]
+    environment:
+      RUN_AS: "1000:1000"
+      NDI_AVAHI: internal
+      NMOS_REGISTRY_ADDRESS: ${NMOS_REGISTRY_ADDRESS:-127.0.0.1}
+      NMOS_REGISTRY_PORT: ${NMOS_REGISTRY_PORT:-3210}
+      NMOS_QUERY_ADDRESS: ${NMOS_REGISTRY_ADDRESS:-127.0.0.1}
+      NMOS_QUERY_PORT: ${NMOS_QUERY_PORT:-3211}
+      NMOS_DNS_SD: "false"
+      NMOS_HOST_ADDRESS: ${HOST_IP}
+      NMOS_SEED: ${STACK_ID:-stack}-ndi-bridge
+      NMOS_LABEL: NDI bridge
+      NMOS_PORT: "3335"
+      WEB_PORT: "8210"
+      MXL_DOMAIN_SCAN_PATH: /Volumes/mxl
+      MXL_OUTPUT_DOMAIN_DIR: /Volumes/mxl/ndi-bridge
+      MXL_CLEANUP_ON_EXIT: "true"
+      SHUTDOWN_TIMEOUT_S: "10"
+      VIDEO_FORMAT: ${VIDEO_FORMAT:-1080p50}
+      NDI_LABEL_PREFIX: NDI
+      NDI_INPUTS: "8"
+      NDI_OUTPUTS: "8"
+      NDI_IN_SYNC: tai
+      NDI_IN_COLOR: best
+      NDI_OUT_PIXEL: uyvy
+    volumes:
+      - type: bind
+        source: ${MXL_ROOT:-/Volumes/mxl}
+        target: /Volumes/mxl
+      - ndi-bridge-config:/config
+    restart: unless-stopped
+volumes:
+  ndi-bridge-config:

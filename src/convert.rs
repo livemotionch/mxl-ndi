@@ -97,25 +97,45 @@ pub fn uyvy_to_v210(src: &[u8], stride: usize, width: usize, height: usize, dst:
     }
 }
 
-/// P216 (16-bit planar 4:2:2) → v210.
+/// 16 → 10 bits, rounded (a decoder's 16-bit output has codec noise in
+/// the low bits; truncating would bias it by half a code value).
+#[inline(always)]
+fn r10(v: u16) -> u32 {
+    ((v as u32 + 32) >> 6).min(0x3FF)
+}
+
+/// P216 (16-bit semi-planar 4:2:2) → v210, rounded to 10 bits.
 pub fn p216_to_v210(src: &[u8], stride: usize, width: usize, height: usize, dst: &mut [u8]) {
     let n = 2 * width;
     let lb = v210_line_bytes(width);
     let uv0 = stride * height;
+    let full = width / 6;
     for y in 0..height {
         let yr = &src[y * stride..y * stride + 2 * width];
         let cr = &src[uv0 + y * stride..uv0 + y * stride + 2 * width];
-        let y16 = |i: usize| u16::from_le_bytes([yr[2 * i], yr[2 * i + 1]]) as u32 >> 6;
-        let c16 = |i: usize| u16::from_le_bytes([cr[2 * i], cr[2 * i + 1]]) as u32 >> 6;
-        // Sample k of the UYVY sequence: odd k is luma k/2, even k chroma
-        // (pair k/4: Cb at 4q, Cr at 4q+2 → CbCr plane index k/2).
-        pack_row(&mut dst[y * lb..(y + 1) * lb], n, |k| {
-            if k & 1 == 1 {
-                y16(k >> 1)
-            } else {
-                c16(k >> 1)
+        let d = &mut dst[y * lb..(y + 1) * lb];
+        // 6 pixels a block: 6 luma, 6 chroma (Cb0 Cr0 Cb2 Cr2 Cb4 Cr4) →
+        // Cb0 Y0 Cr0 | Y1 Cb2 Y2 | Cr2 Y3 Cb4 | Y4 Cr4 Y5.
+        for ((yb, cb), db) in yr.chunks_exact(12).zip(cr.chunks_exact(12)).zip(d.chunks_exact_mut(16)).take(full) {
+            let yv = |i: usize| r10(u16::from_le_bytes([yb[2 * i], yb[2 * i + 1]]));
+            let cv = |i: usize| r10(u16::from_le_bytes([cb[2 * i], cb[2 * i + 1]]));
+            let w = [
+                word(cv(0), yv(0), cv(1)),
+                word(yv(1), cv(2), yv(2)),
+                word(cv(3), yv(3), cv(4)),
+                word(yv(4), cv(5), yv(5)),
+            ];
+            for (k, w) in w.iter().enumerate() {
+                db[4 * k..4 * k + 4].copy_from_slice(&w.to_le_bytes());
             }
-        });
+        }
+        if width % 6 != 0 {
+            let y16 = |i: usize| r10(u16::from_le_bytes([yr[2 * i], yr[2 * i + 1]]));
+            let c16 = |i: usize| r10(u16::from_le_bytes([cr[2 * i], cr[2 * i + 1]]));
+            // Sample k of the UYVY sequence: odd k is luma k/2, even k chroma
+            // (pair k/4: Cb at 4q, Cr at 4q+2 → CbCr plane index k/2).
+            pack_row(d, n, |k| if k & 1 == 1 { y16(k >> 1) } else { c16(k >> 1) });
+        }
     }
 }
 
@@ -255,8 +275,8 @@ impl Planar {
                     let yo = row * stride + 2 * x;
                     let co = stride * height + row * stride + 2 * x;
                     (
-                        u16::from_le_bytes([src[yo], src[yo + 1]]) >> 6,
-                        u16::from_le_bytes([src[co], src[co + 1]]) >> 6,
+                        r10(u16::from_le_bytes([src[yo], src[yo + 1]])) as u16,
+                        r10(u16::from_le_bytes([src[co], src[co + 1]])) as u16,
                     )
                 } else {
                     let o = row * stride + 2 * x;

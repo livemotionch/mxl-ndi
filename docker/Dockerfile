@@ -32,7 +32,7 @@ FROM ${UBUNTU} AS ndi
 ARG NDI_SDK_URL=https://downloads.ndi.tv/SDK/NDI_SDK_Linux/Install_NDI_SDK_v6_Linux.tar.gz
 ARG NDI_SDK_ACCEPT_LICENSE=no
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        curl ca-certificates g++ \
+        curl ca-certificates g++ libavahi-client3 libavahi-common3 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /sdk
 RUN curl -fsSL -o sdk.tar.gz "$NDI_SDK_URL" \

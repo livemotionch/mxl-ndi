@@ -3,10 +3,11 @@
 // Vizrt NDI AB, https://ndi.video/). Independent of the bridge's code.
 //
 //   ndi-testsrc [--name N] [--size WxH] [--rate N/D] [--bits 8|16]
-//               [--channels C] [--frames F] [--no-audio]
+//               [--channels C] [--frames F] [--no-audio] [--yuv file.uyvy]
 //
 // Picture: 75% colour bars (BT.709, limited range) over the top two thirds,
 // a grey ramp below, and a white vertical bar moving one step per frame.
+// --yuv: a raw UYVY picture of --size instead (8-bit), with the moving bar.
 // Audio: a 1 kHz sine at the SMPTE reference level (+/-1.0 is -20 dBFS, so
 // 0.1 is -40 dBFS), FLTP 48 kHz, one block per frame. The SDK clocks the
 // video (clock_video = true); timecodes are synthesised.
@@ -28,6 +29,7 @@ int main(int argc, char** argv) {
     int w = 1920, h = 1080, rn = 50, rd = 1, bits = 8, channels = 2;
     long frames = 0;
     bool audio = true;
+    std::string yuv;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : ""; };
@@ -38,6 +40,7 @@ int main(int argc, char** argv) {
         else if (a == "--channels") channels = std::atoi(next());
         else if (a == "--frames") frames = std::atol(next());
         else if (a == "--no-audio") audio = false;
+        else if (a == "--yuv") yuv = next();
         else { std::fprintf(stderr, "unknown option %s\n", a.c_str()); return 2; }
     }
     std::signal(SIGINT, on_signal);
@@ -80,6 +83,15 @@ int main(int argc, char** argv) {
             put(base, x, y, Y, (x & 1) ? Cr : Cb);
         }
 
+    if (!yuv.empty()) {
+        if (p216) { std::fprintf(stderr, "--yuv is 8-bit UYVY\n"); return 2; }
+        FILE* f = std::fopen(yuv.c_str(), "rb");
+        if (!f || std::fread(base.data(), 1, base.size(), f) != base.size()) {
+            std::fprintf(stderr, "cannot read %zu bytes of %s\n", base.size(), yuv.c_str());
+            return 2;
+        }
+        std::fclose(f);
+    }
     NDIlib_video_frame_v2_t v;
     v.xres = w; v.yres = h;
     v.FourCC = p216 ? NDIlib_FourCC_video_type_P216 : NDIlib_FourCC_video_type_UYVY;

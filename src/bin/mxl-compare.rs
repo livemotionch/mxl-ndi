@@ -22,7 +22,12 @@ fn unpack(g: &[u8], w: usize, h: usize, y: &mut Vec<u16>, c: &mut Vec<u16>) {
         let r = &g[row * lb..(row + 1) * lb];
         for k in 0..2 * w {
             let word = k / 3;
-            let v = u32::from_le_bytes([r[4 * word], r[4 * word + 1], r[4 * word + 2], r[4 * word + 3]]);
+            let v = u32::from_le_bytes([
+                r[4 * word],
+                r[4 * word + 1],
+                r[4 * word + 2],
+                r[4 * word + 3],
+            ]);
             let s = ((v >> (10 * (k % 3))) & 0x3FF) as u16;
             if k & 1 == 1 {
                 y.push(s);
@@ -82,7 +87,9 @@ impl Stats {
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     if a.len() < 5 {
-        eprintln!("usage: mxl-compare <domain A> <flow A> <domain B> <flow B> [frames] [width height]");
+        eprintln!(
+            "usage: mxl-compare <domain A> <flow A> <domain B> <flow B> [frames] [width height]"
+        );
         std::process::exit(2);
     }
     let frames: usize = a.get(5).and_then(|v| v.parse().ok()).unwrap_or(25);
@@ -91,7 +98,8 @@ fn main() {
     let api = mxlio::load().unwrap_or_else(|e| panic!("{e}"));
     let open = |d: &str, f: &str| {
         let inst = Instance::new(&api, Path::new(d)).unwrap_or_else(|e| panic!("{e}"));
-        inst.video_reader(f.parse().expect("flow id")).unwrap_or_else(|e| panic!("{d} {f}: {e}"))
+        inst.video_reader(f.parse().expect("flow id"))
+            .unwrap_or_else(|e| panic!("{d} {f}: {e}"))
     };
     let (ra, rb) = (open(&a[1], &a[2]), open(&a[3], &a[4]));
     let (mut ya, mut ca, mut yb, mut cb) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
@@ -107,7 +115,10 @@ fn main() {
     // Offset: B's grain i shows A's grain i − d; pick the d with the least
     // luma error on one grain.
     let hb = rb.head().expect("head B").saturating_sub(2);
-    assert!(grab(&rb, hb, &mut yb, &mut cb), "grain {hb} of B not readable");
+    assert!(
+        grab(&rb, hb, &mut yb, &mut cb),
+        "grain {hb} of B not readable"
+    );
     let mut best = (u64::MAX, f64::MAX);
     for d in 0..8u64 {
         if grab(&ra, hb - d, &mut ya, &mut ca) {
@@ -119,7 +130,10 @@ fn main() {
         }
     }
     let d = best.0;
-    println!("offset: B grain i = A grain i - {d} (mean luma error at that offset {:.3})", best.1);
+    println!(
+        "offset: B grain i = A grain i - {d} (mean luma error at that offset {:.3})",
+        best.1
+    );
     // Follow B's head (the rings hold only a few hundred ms): each new grain
     // of B against A's grain d earlier.
     let (mut sy, mut sc) = (Stats::default(), Stats::default());

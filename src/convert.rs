@@ -116,7 +116,12 @@ pub fn p216_to_v210(src: &[u8], stride: usize, width: usize, height: usize, dst:
         let d = &mut dst[y * lb..(y + 1) * lb];
         // 6 pixels a block: 6 luma, 6 chroma (Cb0 Cr0 Cb2 Cr2 Cb4 Cr4) →
         // Cb0 Y0 Cr0 | Y1 Cb2 Y2 | Cr2 Y3 Cb4 | Y4 Cr4 Y5.
-        for ((yb, cb), db) in yr.chunks_exact(12).zip(cr.chunks_exact(12)).zip(d.chunks_exact_mut(16)).take(full) {
+        for ((yb, cb), db) in yr
+            .chunks_exact(12)
+            .zip(cr.chunks_exact(12))
+            .zip(d.chunks_exact_mut(16))
+            .take(full)
+        {
             let yv = |i: usize| r10(u16::from_le_bytes([yb[2 * i], yb[2 * i + 1]]));
             let cv = |i: usize| r10(u16::from_le_bytes([cb[2 * i], cb[2 * i + 1]]));
             let w = [

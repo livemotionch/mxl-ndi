@@ -44,6 +44,7 @@ def run(n, settle=20, window=30, host="MXL-TEST"):
         "transit_ms_avg": round(avg(ins, "transit_ms"), 1), "transit_ms_max": round(mx(ins, "transit_max_ms"), 1),
         "capture_ms": round(avg(ins, "capture_ms"), 2), "in_convert_ms": round(avg(ins, "convert_ms"), 2),
         "out_convert_ms": round(avg(outs, "convert_ms"), 2), "send_ms": round(avg(outs, "send_ms"), 2),
+        "stale": sum(b["stale"] - a["stale"] for a, b in ins),
         "ndi_dropped_video": sum(b["ndi_dropped_video"] - a["ndi_dropped_video"] for a, b in ins),
         "latencies": [b["latency_ms"] for _, b in ins],
     }

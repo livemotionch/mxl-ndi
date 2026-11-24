@@ -136,6 +136,8 @@ pub struct Input {
     receiver: Option<ndi::Receiver>,
     source: String,
     time_base: Option<TimeBase>,
+    /// Frames seen without a plausible TAI timecode, time base undecided
+    undecided: u32,
     timing: Option<Timing>,
     tai_offset_ns: i64,
     last_written: u64,
@@ -215,6 +217,7 @@ impl Input {
             receiver: None,
             source: String::new(),
             time_base: None,
+            undecided: 0,
             timing: None,
             tai_offset_ns: mxl_nmos::clock::tai_utc_offset_secs() * 1_000_000_000,
             last_written: 0,
@@ -299,6 +302,7 @@ impl Input {
         self.source = want.clone();
         self.timing = None;
         self.time_base = None;
+        self.undecided = 0;
         self.next_sample = None;
         self.av_shift = None;
         self.fs_last = None;
@@ -351,21 +355,27 @@ impl Input {
     }
 
     /// The sender time (TAI ns) of a frame, picking the time base at the
-    /// first frame of a connection.
-    fn sender_time(&mut self, timecode: i64, timestamp: i64, arrival: u64) -> i64 {
+    /// start of a connection. `None`: skip the frame. A new connection to a
+    /// sender that was idle first gets the sender's last frame, seconds old:
+    /// such a frame neither decides the time base nor is written.
+    fn sender_time(&mut self, timecode: i64, timestamp: i64, arrival: u64) -> Option<i64> {
+        let tc_age = timecode.saturating_mul(100).saturating_sub(arrival as i64);
+        let tc_set = timecode != ndi::TIMECODE_SYNTHESIZE && timecode > 0;
         let base = match self.time_base {
             Some(b) => b,
             None => {
-                let tc_ok = timecode != ndi::TIMECODE_SYNTHESIZE
-                    && timecode > 0
-                    && (timecode.saturating_mul(100) - arrival as i64).abs() < TAI_PLAUSIBLE_NS;
-                let ts_ok = timestamp != ndi::TIMESTAMP_UNDEFINED && timestamp > 0;
-                let b = if tc_ok {
+                let b = if tc_set && tc_age.abs() < TAI_PLAUSIBLE_NS {
                     TimeBase::Timecode
-                } else if ts_ok {
-                    TimeBase::Timestamp
                 } else {
-                    TimeBase::Arrival
+                    self.undecided += 1;
+                    if self.undecided < 10 {
+                        return None;
+                    }
+                    if timestamp != ndi::TIMESTAMP_UNDEFINED && timestamp > 0 {
+                        TimeBase::Timestamp
+                    } else {
+                        TimeBase::Arrival
+                    }
                 };
                 tracing::info!(
                     "in-{}: placing frames by the sender's {}",
@@ -378,11 +388,13 @@ impl Input {
             }
         };
         match base {
-            TimeBase::Timecode => timecode.saturating_mul(100),
+            // A stale frame (more than a second old): not for any grain.
+            TimeBase::Timecode if tc_age < -1_000_000_000 => None,
+            TimeBase::Timecode => Some(timecode.saturating_mul(100)),
             TimeBase::Timestamp if timestamp != ndi::TIMESTAMP_UNDEFINED => {
-                timestamp.saturating_mul(100) + self.tai_offset_ns
+                Some(timestamp.saturating_mul(100) + self.tai_offset_ns)
             }
-            _ => arrival as i64,
+            _ => Some(arrival as i64),
         }
     }
 
@@ -539,7 +551,10 @@ impl Input {
         if f.p_data.is_null() || f.xres <= 0 || f.yres <= 0 {
             return;
         }
-        let ts = self.sender_time(f.timecode, f.timestamp, arrival);
+        let Some(ts) = self.sender_time(f.timecode, f.timestamp, arrival) else {
+            lock(&self.shared.inputs[self.i].status).stale += 1;
+            return;
+        };
         let target = self.map(ts, arrival, true);
         let mut j = self.clock.time_to_index(&self.rate, target);
         let now_idx = self.clock.index_now(&self.rate);
@@ -639,7 +654,9 @@ impl Input {
         if ch > 0 && stride < n {
             return;
         }
-        let ts = self.sender_time(f.timecode, f.timestamp, arrival);
+        let Some(ts) = self.sender_time(f.timecode, f.timestamp, arrival) else {
+            return;
+        };
         let mut target = self.map(ts, arrival, false);
         if let Some(shift) = self.av_shift {
             target = (ts + shift).max(0) as u64;

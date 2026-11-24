@@ -34,6 +34,9 @@ pub struct InputStatus {
     /// Frames not written: a second frame for a grain already written (a
     /// faster source), or one that came after its grain was filled
     pub dropped: u64,
+    /// Frames skipped as stale (a sender's cached last frame at connection)
+    /// or while the time base was being decided
+    pub stale: u64,
     /// Grains filled with the last frame (a slower source, a late frame)
     pub repeated: u64,
     /// Grains filled with black (no source, lost too long, unsupported)

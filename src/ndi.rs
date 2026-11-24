@@ -901,16 +901,29 @@ mod tests {
         let tx = Sender::new(&api, "lm-mxl-ndi smoke", None).unwrap();
         let name = tx.source_name();
         println!("sender {name}");
-        let rx = Receiver::new(&api, &Address::parse(&name), "smoke rx", color_format::BEST, bandwidth::HIGHEST, false)
-            .unwrap();
+        let rx = Receiver::new(
+            &api,
+            &Address::parse(&name),
+            "smoke rx",
+            color_format::BEST,
+            bandwidth::HIGHEST,
+            false,
+        )
+        .unwrap();
         let (w, h) = (1920usize, 1080usize);
         for (fcc, label) in [(fourcc::UYVY, "8-bit"), (fourcc::P216, "16-bit")] {
-            let bytes = if fcc == fourcc::P216 { 4 * w * h } else { 2 * w * h };
+            let bytes = if fcc == fourcc::P216 {
+                4 * w * h
+            } else {
+                2 * w * h
+            };
             let mut data = vec![0u8; bytes];
             if fcc == fourcc::P216 {
                 let (y, c) = data.split_at_mut(2 * w * h);
                 for (i, v) in y.chunks_exact_mut(2).enumerate() {
-                    v.copy_from_slice(&(((64 + (i % 1920) * 876 / 1919) as u16) << 6).to_le_bytes());
+                    v.copy_from_slice(
+                        &(((64 + (i % 1920) * 876 / 1919) as u16) << 6).to_le_bytes(),
+                    );
                 }
                 for v in c.chunks_exact_mut(2) {
                     v.copy_from_slice(&(512u16 << 6).to_le_bytes());
@@ -959,12 +972,27 @@ mod tests {
                     Captured::Video(g) if got.is_none() => {
                         let f = g.f;
                         let first = unsafe { std::slice::from_raw_parts(f.p_data, 16) }.to_vec();
-                        got = Some((fourcc::name(f.fourcc), f.xres, f.yres, f.line_stride_in_bytes, f.timecode, f.timestamp, first));
+                        got = Some((
+                            fourcc::name(f.fourcc),
+                            f.xres,
+                            f.yres,
+                            f.line_stride_in_bytes,
+                            f.timecode,
+                            f.timestamp,
+                            first,
+                        ));
                     }
                     Captured::Audio(g) if audio.is_none() => {
                         let f = g.f;
                         let v = unsafe { *(f.p_data as *const f32) };
-                        audio = Some((fourcc::name(f.fourcc), f.no_channels, f.no_samples, f.channel_stride_in_bytes, v, f.timecode));
+                        audio = Some((
+                            fourcc::name(f.fourcc),
+                            f.no_channels,
+                            f.no_samples,
+                            f.channel_stride_in_bytes,
+                            v,
+                            f.timecode,
+                        ));
                     }
                     _ => {}
                 }

@@ -144,6 +144,98 @@ pub fn p216_to_v210(src: &[u8], stride: usize, width: usize, height: usize, dst:
     }
 }
 
+/// A source of exactly twice the house size (UHD → HD) → v210: each output
+/// sample the average of 2×2 source samples (luma of 2×2 pixels; chroma of
+/// two horizontal chroma pairs on two rows), rounded to 10 bits. From UYVY
+/// or P216. Far cheaper than the bilinear [`Planar`] path.
+pub fn half_to_v210(
+    src: &[u8],
+    stride: usize,
+    width: usize,
+    height: usize,
+    p216: bool,
+    dst: &mut [u8],
+) {
+    let sh = 2 * height;
+    let lb = v210_line_bytes(width);
+    let uv0 = stride * sh;
+    let mut yo = vec![0u16; width];
+    let mut co = vec![0u16; width];
+    let full = width / 6;
+    let n = 2 * width; // output pixel pairs × 4 = source bytes per UYVY row / 2
+    for oy in 0..height {
+        let (r0, r1) = (2 * oy * stride, (2 * oy + 1) * stride);
+        if p216 {
+            // Luma: 2 output pixels from 4 source pixels (8 bytes) per row.
+            let (y0, y1) = (&src[r0..r0 + 4 * width], &src[r1..r1 + 4 * width]);
+            for ((o, a), b) in yo
+                .iter_mut()
+                .zip(y0.chunks_exact(4))
+                .zip(y1.chunks_exact(4))
+            {
+                let s = u16::from_le_bytes([a[0], a[1]]) as u32
+                    + u16::from_le_bytes([a[2], a[3]]) as u32
+                    + u16::from_le_bytes([b[0], b[1]]) as u32
+                    + u16::from_le_bytes([b[2], b[3]]) as u32;
+                *o = ((s + 128) >> 8).min(0x3FF) as u16;
+            }
+            // Chroma: Cb Cr Cb Cr of two source pairs (8 bytes) → Cb Cr.
+            let (c0, c1) = (
+                &src[uv0 + r0..uv0 + r0 + 4 * width],
+                &src[uv0 + r1..uv0 + r1 + 4 * width],
+            );
+            for ((o, a), b) in co
+                .chunks_exact_mut(2)
+                .zip(c0.chunks_exact(8))
+                .zip(c1.chunks_exact(8))
+            {
+                let v = |x: &[u8], k: usize| u16::from_le_bytes([x[2 * k], x[2 * k + 1]]) as u32;
+                o[0] = ((v(a, 0) + v(a, 2) + v(b, 0) + v(b, 2) + 128) >> 8).min(0x3FF) as u16;
+                o[1] = ((v(a, 1) + v(a, 3) + v(b, 1) + v(b, 3) + 128) >> 8).min(0x3FF) as u16;
+            }
+        } else {
+            // UYVY: 8 bytes (Cb Y Cr Y Cb Y Cr Y, 4 pixels) per row → 2 output
+            // pixels; the sum of four 8-bit values is the 10-bit average.
+            let (a0, a1) = (&src[r0..r0 + 2 * n], &src[r1..r1 + 2 * n]);
+            for (((yp, cp), a), b) in yo
+                .chunks_exact_mut(2)
+                .zip(co.chunks_exact_mut(2))
+                .zip(a0.chunks_exact(8))
+                .zip(a1.chunks_exact(8))
+            {
+                let s = |i: usize, j: usize| a[i] as u16 + a[j] as u16 + b[i] as u16 + b[j] as u16;
+                yp[0] = s(1, 3);
+                yp[1] = s(5, 7);
+                cp[0] = s(0, 4);
+                cp[1] = s(2, 6);
+            }
+        }
+        let d = &mut dst[oy * lb..(oy + 1) * lb];
+        for (b, db) in d.chunks_exact_mut(16).take(full).enumerate() {
+            let (y, c) = (&yo[6 * b..6 * b + 6], &co[6 * b..6 * b + 6]);
+            let w = |a: u16, b: u16, c: u16| word(a as u32, b as u32, c as u32);
+            let ws = [
+                w(c[0], y[0], c[1]),
+                w(y[1], c[2], y[2]),
+                w(c[3], y[3], c[4]),
+                w(y[4], c[5], y[5]),
+            ];
+            for (k, w) in ws.iter().enumerate() {
+                db[4 * k..4 * k + 4].copy_from_slice(&w.to_le_bytes());
+            }
+        }
+        if width % 6 != 0 {
+            pack_row(d, 2 * width, |k| {
+                if k & 1 == 1 {
+                    yo[k >> 1] as u32
+                } else {
+                    co[k >> 1] as u32
+                }
+            });
+        }
+    }
+}
+
 /// v210 → UYVY (8-bit, rounded).
 pub fn v210_to_uyvy(src: &[u8], width: usize, height: usize, dst: &mut [u8]) {
     let n = 2 * width;
@@ -425,6 +517,47 @@ mod tests {
     }
 
     #[test]
+    fn half_size_is_the_2x2_average() {
+        let (w, h) = (1926usize, 4usize);
+        // flat 8-bit picture: Y 100, Cb 60, Cr 200 → 10-bit 400, 240, 800
+        let src: Vec<u8> = (0..4 * w * 2 * h)
+            .map(|i| match i % 4 {
+                0 => 60,
+                2 => 200,
+                _ => 100,
+            })
+            .collect();
+        let mut v = vec![0u8; v210_frame_bytes(w, h)];
+        half_to_v210(&src, 4 * w, w, h, false, &mut v);
+        let mut p = vec![0u8; 4 * w * h];
+        v210_to_p216(&v, w, h, &mut p);
+        fn at(p: &[u8], o: usize) -> u16 {
+            u16::from_le_bytes([p[o], p[o + 1]]) >> 6
+        }
+        assert_eq!(
+            (at(&p, 0), at(&p, 2 * w * h), at(&p, 2 * w * h + 2)),
+            (400, 240, 800)
+        );
+        assert_eq!(at(&p, 2 * (w * h - 1)), 400);
+        // the same through P216
+        let mut p2 = vec![0u8; 2 * (4 * w) * (2 * h)];
+        let (yp, cp) = p2.split_at_mut(4 * w * 2 * h);
+        for (k, b) in yp.chunks_exact_mut(2).enumerate() {
+            b.copy_from_slice(&((400u16 + (k as u16 & 1)) << 6).to_le_bytes());
+        }
+        for (k, b) in cp.chunks_exact_mut(2).enumerate() {
+            b.copy_from_slice(&((if k % 2 == 0 { 240u16 } else { 800 }) << 6).to_le_bytes());
+        }
+        let mut v2 = vec![0u8; v210_frame_bytes(w, h)];
+        half_to_v210(&p2, 4 * w, w, h, true, &mut v2);
+        v210_to_p216(&v2, w, h, &mut p);
+        assert_eq!(
+            (at(&p, 0), at(&p, 2 * w * h), at(&p, 2 * w * h + 2)),
+            (401, 240, 800)
+        );
+    }
+
+    #[test]
     fn black() {
         let mut v = vec![0u8; v210_frame_bytes(1920, 1)];
         v210_black(1920, 1, &mut v);
@@ -475,5 +608,16 @@ mod bench {
         assert_eq!(u, u2);
         t("v210→p216", &mut || v210_to_p216(&v, w, h, &mut p));
         t("p216→v210", &mut || p216_to_v210(&p, 2 * w, w, h, &mut v));
+        let uhd = vec![0u8; 3840 * 2160 * 4];
+        t("2160 P216 → 1080 v210 (half)", &mut || {
+            half_to_v210(&uhd, 7680, w, h, true, &mut v)
+        });
+        let mut pl = Planar::default();
+        let mut out = Planar::default();
+        t("2160 P216 → 1080 v210 (bilinear)", &mut || {
+            pl.load(&uhd, 7680, 3840, 2160, true);
+            pl.scale_into(&mut out, w, h);
+            out.to_v210(&mut v);
+        });
     }
 }

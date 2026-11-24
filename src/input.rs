@@ -317,6 +317,11 @@ impl Input {
             st.error = None;
             st.sender = None;
             st.timing = None;
+            st.codec = None;
+            st.frame_rate = None;
+            st.audio_rate = 0;
+            st.audio_channels = 0;
+            st.scaled = false;
             st.state = if want.is_empty() {
                 "no_source"
             } else {
@@ -515,6 +520,10 @@ impl Input {
             } else {
                 convert::uyvy_to_v210(data, stride, fw, fh, &mut self.held);
             }
+            true
+        } else if self.config.in_scale && (fw, fh) == (2 * self.w, 2 * self.h) {
+            convert::half_to_v210(data, stride, self.w, self.h, p216, &mut self.held);
+            scaled = true;
             true
         } else if self.config.in_scale {
             self.planar_in.load(data, stride, fw, fh, p216);

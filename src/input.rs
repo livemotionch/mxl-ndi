@@ -1,5 +1,5 @@
 //! NDI → MXL: one thread per input. It receives from an NDI source (the SDK
-//! decodes SpeedHQ to UYVY or P216 in the calling thread), converts to v210
+//! decodes SpeedHQ to UYVY or P216 in its own `ndir:video` threads), converts to v210
 //! and writes a video grain and float32 samples into the input's MXL flows,
 //! which are always there (black and silence without a source).
 //!

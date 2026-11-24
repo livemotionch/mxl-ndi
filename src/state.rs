@@ -57,8 +57,9 @@ pub struct InputStatus {
     pub latency_ms: Option<f64>,
     /// Time to convert a frame to v210 (ms, last second)
     pub convert_ms: f64,
-    /// Time `NDIlib_recv_capture_v3` took for a video frame (ms, last
-    /// second): the SDK decodes in the calling thread
+    /// Time `NDIlib_recv_capture_v3` took for a video frame already queued
+    /// (ms, last second); the SDK decodes in its own threads, so this is
+    /// near 0 (frame-sync mode: the frame-sync call)
     pub capture_ms: f64,
     /// The SDK's counters: frames dropped by the receiver (it fell behind),
     /// and its queue depth now

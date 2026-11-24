@@ -120,10 +120,19 @@ fn main() {
     }
     let d = best.0;
     println!("offset: B grain i = A grain i - {d} (mean luma error at that offset {:.3})", best.1);
+    // Follow B's head (the rings hold only a few hundred ms): each new grain
+    // of B against A's grain d earlier.
     let (mut sy, mut sc) = (Stats::default(), Stats::default());
     let mut done = 0;
-    let start = rb.head().expect("head B").saturating_sub(frames as u64 + 2);
-    for i in start..start + frames as u64 {
+    let mut last = 0u64;
+    let t0 = std::time::Instant::now();
+    while done < frames && t0.elapsed().as_secs() < 10 + frames as u64 / 10 {
+        let i = rb.head().expect("head B").saturating_sub(1);
+        if i == last {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            continue;
+        }
+        last = i;
         if grab(&rb, i, &mut yb, &mut cb) && grab(&ra, i - d, &mut ya, &mut ca) {
             sy.add(&ya, &yb);
             sc.add(&ca, &cb);

@@ -213,7 +213,8 @@ an `NDI_CONFIG_DIR` whose `ndi-config.v1.json` has
 
 ## Licences and attributions
 
-lm-mxl-ndi: © Livemotion. No licence has been chosen yet, so all rights are reserved. It uses:
+lm-mxl-ndi is © 2026 Livemotion, released under the [MIT licence](LICENSE). The
+MIT licence covers this repository's code only, not the NDI SDK. It uses:
 
 - **The NDI® SDK for Linux** (NDI 6, `libndi.so.6`, © 2023-2026 Vizrt NDI AB),
   under the NDI SDK License Agreement (https://ndi.link/ndisdk_license). The
@@ -226,8 +227,9 @@ lm-mxl-ndi: © Livemotion. No licence has been chosen yet, so all rights are res
 - **MXL** (dmf-mxl/mxl, Apache-2.0), loaded at run time; `mxl` / `mxl-sys`
   Rust bindings (Apache-2.0). **mxl-nmos** (LeeO86, MIT / Apache-2.0).
 - `src/mxlio/domain.rs` and `scripts/build-mxl.sh` come from LeeO86's
-  mxl-audio-mixer (MIT) through lm-mxl-mixer and lm-mxl-omt; `src/mxlio/`,
-  `src/reader.rs` and `src/simd.rs` from lm-mxl-mixer through lm-mxl-omt.
+  mxl-audio-mixer (MIT) through [lm-mxl-mixer](https://github.com/livemotionch/lm-mxl-mixer) and
+  [mxl-omt](https://github.com/livemotionch/mxl-omt); `src/mxlio/`, `src/reader.rs`
+  and `src/simd.rs` from lm-mxl-mixer through mxl-omt (both MIT).
 - Structure and conventions follow LeeO86's mxl-decklink (MIT); no code from it.
 
 What the NDI licence asks of this bridge, and how it is met:
@@ -239,7 +241,7 @@ What the NDI licence asks of this bridge, and how it is met:
 - **Redistribution.** The runtime and compiled sample code may ship inside the
   product ("Bundled Product"); the SDK and the NDI tools (discovery server,
   etc.) may not be redistributed — hence the separate `ndi-discovery-test`
-  target. The image stays on the VM; it is not published.
+  target. No image is published; build your own.
 - **Latest SDK.** The licence requires products to use the latest SDK: the
   build always downloads the current release (no pinned version or checksum).
 - **No modification or reverse engineering** of the SDK; it is loaded as is.
@@ -249,12 +251,11 @@ Points to check before any wider use (not legal advice):
 - The licence's definition of "Products" excludes software running on a
   "fixed-purpose virtual or cloud environment … containerized instance …"
   that restricts the user from changing the OS or installing software; that
-  use needs a commercial licence from NDI. Our use (a container on VMs we
-  fully control) reads as outside this exclusion, but a locked-down appliance
-  or hosted service built on this image would not.
-- Using "NDI" in a product's name falls under the NDI brand guidelines; the
-  name lm-mxl-ndi is fine for an internal tool but should be checked if it is
-  ever published.
+  use needs a commercial licence from NDI. A container on machines whose
+  users can change the OS and install software reads as outside this
+  exclusion; a locked-down appliance or hosted service built on this image
+  would not.
+- Using "NDI" in a product's name falls under the NDI brand guidelines.
 - Distributing the bridge to third parties would need an EULA with the terms
   of the licence's §3d.
 

@@ -1,5 +1,5 @@
-# lm-mxl-ndi on the mxl-test VM, next to mxl-stack (for lm-infra's
-# mxl-test/compose.lm-ndi.yaml). Image built on the VM from ~/lm-mxl-ndi
+# lm-mxl-ndi on the mxl-test VM, next to mxl-stack's single-host
+# example. Image built on the VM from ~/lm-mxl-ndi
 # (docker/Dockerfile, NDI_SDK_ACCEPT_LICENSE=yes). Web 8210 (Caddy 18210),
 # NMOS 3335. NDI: TCP 5960 (source queries) and 5961+ (one per stream),
 # UDP 5960+ (reliable UDP); clear of OMT's 6400–6431.

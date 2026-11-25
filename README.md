@@ -213,7 +213,7 @@ an `NDI_CONFIG_DIR` whose `ndi-config.v1.json` has
 
 ## Licences and attributions
 
-lm-mxl-ndi: Livemotion, private. It uses:
+lm-mxl-ndi: © Livemotion. No licence has been chosen yet, so all rights are reserved. It uses:
 
 - **The NDI® SDK for Linux** (NDI 6, `libndi.so.6`, © 2023-2026 Vizrt NDI AB),
   under the NDI SDK License Agreement (https://ndi.link/ndisdk_license). The

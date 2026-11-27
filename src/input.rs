@@ -39,7 +39,7 @@ use std::time::Instant;
 
 use crate::config::{Config, LossMode, SyncMode};
 use crate::convert::{self, Planar};
-use crate::mxlio::{self, flowdef, Api, Clock, Instance, RawWriter};
+use crate::mxlio::{self, flowdef, Api, Clock, Instance, MxlError, RawWriter};
 use crate::ndi::{self, fourcc, Captured, NdiApi};
 use crate::state::{lock, Shared};
 
@@ -685,7 +685,9 @@ impl Input {
             Some(next) if s0 > next && s0 - next < 48_000 => {
                 // A gap: silence up to the new position.
                 lock(&self.shared.inputs[self.i].status).audio_resyncs += 1;
-                self.write_silence(next, (s0 - next) as usize);
+                if !self.write_silence(next, (s0 - next) as usize) {
+                    return;
+                }
                 s0
             }
             Some(next) if s0 < next => {
@@ -746,7 +748,25 @@ impl Input {
                 self.next_sample = Some(start + count as u64);
                 self.last_audio = Some(Instant::now());
             }
-            Err(e) => self.set_error(Some(format!("MXL audio write at {start}+{count}: {e}"))),
+            Err(e) => self.audio_write_failed(start, count, e),
+        }
+    }
+
+    /// An audio sample write was rejected by MXL — the target index fell
+    /// outside the flow's writable window: a gap or jump in the source's
+    /// clock, a stale position after a reconnection, or a block larger than
+    /// the ring. Recover instead of latching an error: forget the position so
+    /// the next frame re-places audio from the grain clock, and count it as a
+    /// resync. A free-running or glitchy source (e.g. an adaptive hardware
+    /// encoder) then can't stall the input; only MXL losing the flow
+    /// (`FlowInvalid`) is surfaced, since that needs the writer rebuilt.
+    fn audio_write_failed(&mut self, at: u64, count: usize, e: MxlError) {
+        self.next_sample = None;
+        lock(&self.shared.inputs[self.i].status).audio_resyncs += 1;
+        if e == MxlError::FlowInvalid {
+            self.set_error(Some(format!("audio flow invalid at {at}+{count}")));
+        } else {
+            tracing::debug!("in-{}: audio write at {at}+{count}: {e}; resync", self.i + 1);
         }
     }
 
@@ -873,7 +893,9 @@ impl Input {
             Some(n) if n >= s1 => return,
             Some(n) if n > s0 => n,
             Some(n) if n < s0 && s0 - n < 48_000 => {
-                self.write_silence(n, (s0 - n) as usize);
+                if !self.write_silence(n, (s0 - n) as usize) {
+                    return;
+                }
                 s0
             }
             _ => s0,
@@ -907,7 +929,10 @@ impl Input {
         self.fs_audio = data;
     }
 
-    fn write_silence(&mut self, start: u64, count: usize) {
+    /// Fill `[start, start + count)` with silence. Returns `false` (and
+    /// resyncs) if a write is rejected — a discontinuity the source produced;
+    /// the caller then skips this audio and re-places on the next frame.
+    fn write_silence(&mut self, start: u64, count: usize) -> bool {
         let mut done = 0usize;
         while done < count {
             let c = (count - done).min(1920);
@@ -918,13 +943,14 @@ impl Input {
                     b.fill(0.0);
                 }
             }) {
-                self.set_error(Some(format!("MXL audio write: {e}")));
-                return;
+                self.audio_write_failed(start + done as u64, c, e);
+                return false;
             }
             done += c;
         }
         self.next_sample = Some(start + count as u64);
         lock(&self.shared.inputs[self.i].status).audio_silence += 1;
+        true
     }
 
     /// Fill grains (and audio) nobody wrote.
@@ -981,7 +1007,7 @@ impl Input {
                 _ => end.saturating_sub(960),
             };
             if end > start {
-                self.write_silence(start, (end - start) as usize);
+                let _ = self.write_silence(start, (end - start) as usize);
             }
         }
     }
